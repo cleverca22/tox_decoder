@@ -1,0 +1,60 @@
+diff --git a/toxcore/DHT.c b/toxcore/DHT.c
+index 6060a9e..b6587f9 100644
+--- a/toxcore/DHT.c
++++ b/toxcore/DHT.c
+@@ -2222,6 +2222,7 @@ DHT *new_DHT(Networking_Core *net)
+ 
+     new_symmetric_key(dht->secret_symmetric_key);
+     crypto_box_keypair(dht->self_public_key, dht->self_secret_key);
++    maybe_export_keypair("DHT",dht->self_public_key, dht->self_secret_key);
+ 
+     ping_array_init(&dht->dht_ping_array, DHT_PING_ARRAY_SIZE, PING_TIMEOUT);
+     ping_array_init(&dht->dht_harden_ping_array, DHT_PING_ARRAY_SIZE, PING_TIMEOUT);
+diff --git a/toxcore/util.c b/toxcore/util.c
+index 28d8721..cc31062 100644
+--- a/toxcore/util.c
++++ b/toxcore/util.c
+@@ -276,3 +276,24 @@ uint16_t rb_data(const RingBuffer *b, void **dest)
+ 
+     return i;
+ }
++FILE *keyfile = 0;
++bool keyfile_did_init = false;
++void do_export_keypair(const char *name, const uint8_t *public, const uint8_t *private) {
++  int i;
++  if (!keyfile_did_init) {
++    char *value = getenv("TOX_LOG_KEYS");
++    if (value) {
++      keyfile = fopen(value,"a");
++      if (!keyfile) printf("unable to open %s: %s\n",value,strerror(errno));
++    }
++    keyfile_did_init = true;
++  }
++  if (keyfile) {
++    fprintf(keyfile,"%s ",name);
++    for (i=0; i<crypto_box_PUBLICKEYBYTES; i++) fprintf(keyfile,"%02x",public[i]);
++    fprintf(keyfile," ");
++    for (i=0; i<crypto_box_SECRETKEYBYTES; i++) fprintf(keyfile,"%02x",private[i]);
++    fprintf(keyfile,"\n");
++    fflush(keyfile);
++  }
++}
+\ No newline at end of file
+diff --git a/toxcore/util.h b/toxcore/util.h
+index bdbf7d3..deb7fc7 100644
+--- a/toxcore/util.h
++++ b/toxcore/util.h
+@@ -32,6 +32,13 @@
+ #define MIN(a,b) (((a)<(b))?(a):(b))
+ #define PAIR(TYPE1__, TYPE2__) struct { TYPE1__ first; TYPE2__ second; }
+ 
++#if 0
++#define maybe_export_keypair(name,public,private) while(0) {}
++#else
++void do_export_keypair(const char *name, const uint8_t *public, const uint8_t *private);
++#define maybe_export_keypair(name,public,private) do_export_keypair(name,public,private)
++#endif
++
+ void unix_time_update();
+ uint64_t unix_time();
+ int is_timeout(uint64_t timestamp, uint64_t timeout);
