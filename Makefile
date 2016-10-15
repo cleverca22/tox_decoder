@@ -1,4 +1,4 @@
-CFLAGS=-fPIC -I${shark} -I${glib}/include/glib-2.0 -I${glib}/lib/glib-2.0/include/
+CFLAGS=-fPIC -I${shark} -I${glibdev}/include/glib-2.0 -I${glib}/lib/glib-2.0/include/ -Werror=implicit-function-declaration
 
 libtoxcore.so: plugin.o toxcore.o
 	g++ -o $@ -shared -lsodium $?

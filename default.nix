@@ -3,11 +3,11 @@ with import <nixpkgs> {};
 stdenv.mkDerivation {
   name = "toxcore_plugin";
   src = ./.;
-  #shark = /home/clever/wireshark-1.12.7;
-  shark = "/nix/store/yy4l5hs8l8j0nakqsri85cirxh7mfjri-wireshark-1.12.7";
-  glib = glib;
-  buildInputs = [ glib libsodium ];
+  shark = /home/clever/x/wireshark-2.2.0;
+  glib = glib.out;
+  glibdev = glib.dev;
+  buildInputs = [ glib libsodium python ];
   postConfigure = ''
-    ''${shark}/tools/make-dissector-reg . plugin toxcore.c
+    ''${shark}/tools/make-dissector-reg.py . plugin toxcore.c
   '';
 }

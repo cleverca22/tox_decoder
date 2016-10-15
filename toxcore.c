@@ -2,10 +2,12 @@
 
 #include <epan/packet.h>
 #include <epan/stats_tree.h>
+#include <epan/to_str.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <sodium/crypto_box.h>
+#include <sodium/core.h>
 
 #define TOX_PORT 33445
 
@@ -98,7 +100,7 @@ void to_hex(char *a, const uint8_t *p, int size) {
 static struct remote_node *find_node(const address *addr) {
   int i;
   for (i=0; i<remote_node_count; i++) {
-    if (ADDRESSES_EQUAL(&remote_nodes[i].ipaddr,addr)) {
+    if (addresses_equal(&remote_nodes[i].ipaddr,addr)) {
       //gchar str[64];
       //address_to_str_buf(addr,str,63);
       //printf("found node %s in slot %d\n",str,i);
@@ -145,7 +147,7 @@ static tvbuff_t *try_decrypt(packet_info *pinfo, tvbuff_t *tvb, gint pubkeyoffse
       g_free(plaintext);
     }
   }
-  printf("unable to decrypt packet %d\n",pinfo->fd->num);
+  printf("unable to decrypt packet %d\n",pinfo->num);
   return 0;
 }
 void log_pubkey(tvbuff_t *tvb, const address *src, guint8 type) {
@@ -169,7 +171,7 @@ void log_pubkey(tvbuff_t *tvb, const address *src, guint8 type) {
   if (offset > 0) {
     remote_node_count++;
     remote_nodes = realloc(remote_nodes,sizeof(struct remote_node) * remote_node_count);
-    COPY_ADDRESS(&remote_nodes[remote_node_count-1].ipaddr,src);
+    copy_address(&remote_nodes[remote_node_count-1].ipaddr,src);
     // FIXME
     int i;
     for (i=0; i<32; i++) {
