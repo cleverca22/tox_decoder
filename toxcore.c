@@ -30,6 +30,7 @@ static int hf_tox_nonce = -1;
 static int hf_tox_crypted = -1;
 static int hf_tox_noncetail = -1;
 static int hf_tox_ping_type = -1, hf_tox_ping_id = -1, hf_tox_send_count = -1;
+static int hf_tox_module = -1;
 
 static gint ett_tox = -1;
 static int tox_tap = -1;
@@ -182,7 +183,7 @@ void log_pubkey(tvbuff_t *tvb, const address *src, guint8 type) {
     printf("cant save %s, type %d has no set offset\n",str,type);
   }
 }
-static void dissect_tox(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
+static int dissect_tox(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *something) {
   gint offset = 0;
   tvbuff_t *plaintext = 0;
 
@@ -347,7 +348,10 @@ void process_keys(FILE *input) {
   }
 }
 void proto_register_tox(void) {
-  sodium_init();
+  if (sodium_init() == -1) {
+    fprintf(stderr, "fatal error loading sodium\n");
+    return;
+  }
   char *value = getenv("TOX_LOG_KEYS");
   if (value) {
     printf("loading tox private keys from %s\n",value);
@@ -358,14 +362,15 @@ void proto_register_tox(void) {
     }
   }
   static hf_register_info hf[] = {
-    { &hf_tox_pdu_type , { "packet type", "tox.type"     , FT_UINT8, BASE_DEC , VALS(packettypenames), 0x0, NULL, HFILL } },
+    { &hf_tox_pdu_type , { "Packet Type", "tox.type"     , FT_UINT8, BASE_DEC , VALS(packettypenames), 0x0, NULL, HFILL } },
     { &hf_tox_dhtpubkey, { "DHT Pubkey" , "tox.dhtpubkey", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
     { &hf_tox_nonce    , { "Nonce"      , "tox.nonce"    , FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
     { &hf_tox_crypted  , { "Encrypted"  , "tox.crypted"  , FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
     { &hf_tox_noncetail, { "Nonce-tail" , "tox.noncetail", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL } },
     { &hf_tox_ping_type, { "Ping Type"  , "tox.pingtype" , FT_UINT8, BASE_DEC, VALS(pingtype), 0x0, NULL, HFILL } },
     { &hf_tox_ping_id  , { "Ping ID"    , "tox.pingid"   , FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
-    { &hf_tox_send_count,{ "Node Count" , "tox.nodecount", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL } }
+    { &hf_tox_send_count,{ "Node Count" , "tox.nodecount", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+    { &hf_tox_module   , { "Module"     , "tox.module"   , FT_STRING,BASE_NONE, NULL, 0x0, NULL, HFILL } }
   };
 
   static gint *ett[] = { &ett_tox };
