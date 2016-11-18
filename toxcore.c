@@ -3,9 +3,11 @@
 #include <epan/packet.h>
 #include <epan/stats_tree.h>
 #include <epan/to_str.h>
+#include <epan/address.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <sodium/crypto_box.h>
 #include <sodium/core.h>
 
@@ -31,8 +33,12 @@ static int hf_tox_crypted = -1;
 static int hf_tox_noncetail = -1;
 static int hf_tox_ping_type = -1, hf_tox_ping_id = -1, hf_tox_send_count = -1;
 static int hf_tox_module = -1;
+static int hf_tox_address_family = -1;
+static int hf_tox_node_address4 = -1;
+static int hf_tox_node_address6 = -1;
+static int hf_tox_node_port = -1;
 
-static gint ett_tox = -1;
+static gint ett_tox = -1, ett_node = -1;
 static int tox_tap = -1;
 
 static const guint8* st_str_packets = "Total Packets";
@@ -88,6 +94,15 @@ static const value_string packettypenames [] = {
   { 199, "lossy groupchat" },
   { 0, NULL }
 };
+
+static const value_string address_families [] = {
+  { 0x02, "UDPv4" },
+  { 0x0a, "UDPv6" },
+  { 0x82, "TCPv4" },
+  { 0x8a, "TCPv6" },
+  { 0, NULL }
+};
+
 void to_hex(char *a, const uint8_t *p, int size) {
   char buffer[3];
   int i;
@@ -155,6 +170,25 @@ static tvbuff_t *try_decrypt(packet_info *pinfo, tvbuff_t *tvb, gint pubkeyoffse
 /**
   * saves the dht public key of the address in src
   **/
+void log_pubkey_raw(packet_info *pinfo, tvbuff_t *tvb, const address *src, int offset) {
+  guchar str[64];
+
+  struct remote_node *old_entry = find_node(src);
+  if (old_entry) return;
+
+  address_to_str_buf(src,str,63);
+
+  remote_node_count++;
+  remote_nodes = realloc(remote_nodes,sizeof(struct remote_node) * remote_node_count);
+  copy_address(&remote_nodes[remote_node_count-1].ipaddr,src);
+  // FIXME
+  int i;
+  for (i=0; i<32; i++) {
+    remote_nodes[remote_node_count-1].public[i] = tvb_get_guint8(tvb,offset+i);
+  }
+  printf("added %s to slot %d\n",str,remote_node_count-1);
+
+}
 void log_pubkey(packet_info *pinfo, tvbuff_t *tvb, const address *src, guint8 type) {
   guchar str[64];
   address_to_str_buf(src,str,63);
@@ -175,15 +209,7 @@ void log_pubkey(packet_info *pinfo, tvbuff_t *tvb, const address *src, guint8 ty
     return;
   }
   if (offset > 0) {
-    remote_node_count++;
-    remote_nodes = realloc(remote_nodes,sizeof(struct remote_node) * remote_node_count);
-    copy_address(&remote_nodes[remote_node_count-1].ipaddr,src);
-    // FIXME
-    int i;
-    for (i=0; i<32; i++) {
-      remote_nodes[remote_node_count-1].public[i] = tvb_get_guint8(tvb,offset+i);
-    }
-    printf("added %s to slot %d\n",str,remote_node_count-1);
+    log_pubkey_raw(pinfo, tvb, src, offset);
   } else {
     printf("cant save %d %s, type %d has no set offset\n", pinfo->num, str, type);
   }
@@ -245,10 +271,57 @@ static int dissect_tox(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
       if (plaintext) {
         if (packet_type == 2) {
           proto_tree_add_item(tox_tree, hf_tox_dhtpubkey, plaintext, 0, 32, ENC_BIG_ENDIAN);
-          proto_tree_add_item(tox_tree, hf_tox_ping_id, plaintext, 32, 8, ENC_BIG_ENDIAN);
         } else {
+          guint8 node_count = tvb_get_guint8(plaintext, 0);
           proto_tree_add_item(tox_tree, hf_tox_send_count, plaintext, 0, 1, ENC_BIG_ENDIAN);
-          proto_tree_add_item(tox_tree, hf_tox_ping_id, plaintext, -8, 8, ENC_BIG_ENDIAN); // TODO, fix offset
+
+          int offset = 1;
+          for (int i=0; i<node_count; i++) {
+            guint8 addr_family = tvb_get_guint8(plaintext, offset);
+            bool ipv4 = true;
+            int length = -1;
+            if ((addr_family == 0x02) || (addr_family == 0x82)) {
+              ipv4 = true;
+              length = 39;
+            } else if ((addr_family == 0x0a) || (addr_family == 0x8a)) {
+              ipv4 = false;
+              length = 51;
+            } else break;
+
+            proto_item *node_item;
+            proto_tree *node_tree = proto_tree_add_subtree(tox_tree, plaintext, offset, length, ett_node, &node_item, "Node");
+            proto_tree_add_item(node_tree, hf_tox_address_family, plaintext, offset, 1, ENC_BIG_ENDIAN);
+            offset += 1;
+
+            guchar *buffer = NULL;
+            address addr;
+
+            if (ipv4) {
+              guint32 address4 = tvb_get_ipv4(plaintext, offset);
+              set_address(&addr, AT_IPv4, 4, &address4);
+              buffer = address_to_str(wmem_packet_scope(), &addr);
+              proto_tree_add_ipv4(node_tree, hf_tox_node_address4, plaintext, offset, 4, address4);
+              offset += 4;
+            } else {
+              struct e_in6_addr address6;
+              tvb_get_ipv6(plaintext, offset, &address6);
+              set_address(&addr, AT_IPv6, sizeof(struct e_in6_addr), &address6);
+              buffer = address_to_str(wmem_packet_scope(), &addr);
+              proto_tree_add_ipv6(node_tree, hf_tox_node_address6, plaintext, offset, 16, &address6);
+              offset += 16;
+            }
+
+            guint16 port = tvb_get_guint16(plaintext, offset, ENC_BIG_ENDIAN);
+            proto_tree_add_item(node_tree, hf_tox_node_port, plaintext, offset, 2, ENC_BIG_ENDIAN);
+            offset += 2;
+
+            proto_item_set_text(node_item, "[%s]:%d", buffer, port);
+
+
+            log_pubkey_raw(pinfo, plaintext, &addr, offset);
+            proto_tree_add_item(node_tree, hf_tox_dhtpubkey, plaintext, offset, 32, ENC_BIG_ENDIAN);
+            offset += 32;
+          }
         }
       } else {
         proto_tree_add_item(tox_tree, hf_tox_crypted, tvb, offset, -1, ENC_BIG_ENDIAN);
@@ -381,10 +454,14 @@ void proto_register_tox(void) {
     { &hf_tox_ping_type, { "Ping Type"  , "tox.pingtype" , FT_UINT8, BASE_DEC, VALS(pingtype), 0x0, NULL, HFILL } },
     { &hf_tox_ping_id  , { "Ping ID"    , "tox.pingid"   , FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
     { &hf_tox_send_count,{ "Node Count" , "tox.nodecount", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL } },
-    { &hf_tox_module   , { "Module"     , "tox.module"   , FT_STRING,BASE_NONE, NULL, 0x0, NULL, HFILL } }
+    { &hf_tox_module   , { "Module"     , "tox.module"   , FT_STRING,BASE_NONE, NULL, 0x0, NULL, HFILL } },
+    { &hf_tox_address_family, { "Address Family", "tox.addrfamily", FT_UINT8, BASE_DEC, VALS(address_families), 0x0, NULL, HFILL } },
+    { &hf_tox_node_address4, { "Node Address", "tox.node_address", FT_IPv4, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+    { &hf_tox_node_address6, { "Node Address", "tox.node_address", FT_IPv6, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+    { &hf_tox_node_port, { "Node Port", "tox.node_port", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } }
   };
 
-  static gint *ett[] = { &ett_tox };
+  static gint *ett[] = { &ett_tox, &ett_node };
   proto_tox = proto_register_protocol ("Tox Protocol", "Tox", "tox");
   proto_register_field_array(proto_tox, hf, array_length(hf));
   proto_register_subtree_array(ett, array_length(ett));
