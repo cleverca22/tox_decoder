@@ -134,7 +134,7 @@ static tvbuff_t *try_decrypt(packet_info *pinfo, tvbuff_t *tvb, gint pubkeyoffse
       }
     }
   }
-  const guint8 *srcpublic = tvb_get_ptr(tvb,pubkeyoffset,crypto_box_PUBLICKEYBYTES);
+  const guint8 *srcpublic = tvb_get_ptr(tvb, pubkeyoffset, crypto_box_PUBLICKEYBYTES);
 
   //puts("source pubkey not found in toxcore dump, trying each dht key as dest");
   for (i=0; i<dht_key_count; i++) {
@@ -151,7 +151,11 @@ static tvbuff_t *try_decrypt(packet_info *pinfo, tvbuff_t *tvb, gint pubkeyoffse
   printf("unable to decrypt packet %d\n",pinfo->num);
   return 0;
 }
-void log_pubkey(tvbuff_t *tvb, const address *src, guint8 type) {
+
+/**
+  * saves the dht public key of the address in src
+  **/
+void log_pubkey(packet_info *pinfo, tvbuff_t *tvb, const address *src, guint8 type) {
   guchar str[64];
   address_to_str_buf(src,str,63);
   struct remote_node *old_entry = find_node(src);
@@ -162,6 +166,7 @@ void log_pubkey(tvbuff_t *tvb, const address *src, guint8 type) {
   case 1:
   case 2:
   case 4:
+  case 33:
   case 131:
     offset = 1;
     break;
@@ -180,9 +185,10 @@ void log_pubkey(tvbuff_t *tvb, const address *src, guint8 type) {
     }
     printf("added %s to slot %d\n",str,remote_node_count-1);
   } else {
-    printf("cant save %s, type %d has no set offset\n",str,type);
+    printf("cant save %d %s, type %d has no set offset\n", pinfo->num, str, type);
   }
 }
+
 static int dissect_tox(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *something) {
   gint offset = 0;
   tvbuff_t *plaintext = 0;
@@ -193,7 +199,7 @@ static int dissect_tox(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
   col_clear(pinfo->cinfo,COL_INFO);
   col_add_fstr(pinfo->cinfo, COL_INFO, "%s", val_to_str(packet_type, packettypenames, "Unknown (0x%02x)"));
 
-  log_pubkey(tvb,&pinfo->src,packet_type);
+  log_pubkey(pinfo, tvb,&pinfo->src,packet_type);
 
   if (tree) {
     //printf("%d: deep decoding type %d\n",pinfo->fd->num,packet_type);
@@ -204,6 +210,7 @@ static int dissect_tox(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
     proto_item_append_text(ti,", Type %s", val_to_str(packet_type, packettypenames, "Unknown (0x%02x)"));
 
     tox_tree = proto_item_add_subtree(ti, ett_tox);
+
     proto_tree_add_item(tox_tree, hf_tox_pdu_type, tvb, offset, 1, ENC_BIG_ENDIAN);
     offset += 1;
     switch (packet_type) {
@@ -305,6 +312,8 @@ static int dissect_tox(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
   struct ToxTap *toxinfo = wmem_alloc(wmem_packet_scope(), sizeof(struct ToxTap));
   toxinfo->packet_type = packet_type;
   tap_queue_packet(tox_tap, pinfo, toxinfo);
+
+  return tvb_captured_length(tvb);
 }
 
 static void tox_stats_tree_init(stats_tree *st) {
@@ -333,6 +342,7 @@ void hex_string_to_bin(const char *hex_string, uint8_t *ret)
     for (i = 0; i < len; ++i, pos += 2)
         sscanf(pos, "%2hhx", &ret[i]);
 }
+
 void process_keys(FILE *input) {
   int ret;
   char name[10],public[65],private[65];
@@ -347,6 +357,7 @@ void process_keys(FILE *input) {
     }
   }
 }
+
 void proto_register_tox(void) {
   if (sodium_init() == -1) {
     fprintf(stderr, "fatal error loading sodium\n");
@@ -365,7 +376,7 @@ void proto_register_tox(void) {
     { &hf_tox_pdu_type , { "Packet Type", "tox.type"     , FT_UINT8, BASE_DEC , VALS(packettypenames), 0x0, NULL, HFILL } },
     { &hf_tox_dhtpubkey, { "DHT Pubkey" , "tox.dhtpubkey", FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
     { &hf_tox_nonce    , { "Nonce"      , "tox.nonce"    , FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
-    { &hf_tox_crypted  , { "Encrypted"  , "tox.crypted"  , FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
+    { &hf_tox_crypted  , { "Ciphertext"  , "tox.ciphertext",FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },
     { &hf_tox_noncetail, { "Nonce-tail" , "tox.noncetail", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL } },
     { &hf_tox_ping_type, { "Ping Type"  , "tox.pingtype" , FT_UINT8, BASE_DEC, VALS(pingtype), 0x0, NULL, HFILL } },
     { &hf_tox_ping_id  , { "Ping ID"    , "tox.pingid"   , FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL } },

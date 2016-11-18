@@ -18,6 +18,8 @@ int crypto_box_keypair(unsigned char *pk, unsigned char *sk)
     size_t size;
     char **strings;
     size_t i;
+    const char *name = "name";
+    bool export = true;
 
     size = backtrace(array, 20);
     strings = backtrace_symbols(array, size);
@@ -37,9 +39,13 @@ int crypto_box_keypair(unsigned char *pk, unsigned char *sk)
     int ret = orig_crypto_box_keypair(pk, sk);
     if (size >= 2) {
         if (strstr(strings[1], "create_onion_path")) {
-
-        } else {
-            do_export_keypair("name", pk, sk);
+            name = "onion";
+            export = false;
+        } else if (strstr(strings[1], "new_DHT")) {
+            name = "DHT";
+        }
+        if (export) {
+            do_export_keypair(name, pk, sk);
         }
     }
     free(strings);

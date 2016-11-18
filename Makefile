@@ -3,10 +3,10 @@ CFLAGS=-fPIC -I${shark} -I${glibdev}/include/glib-2.0 -I${glib}/lib/glib-2.0/inc
 all: libtoxcore.so liblogkeys.so
 
 libtoxcore.so: plugin.o toxcore.o
-	g++ -o $@ -shared -lsodium $?
+	g++ -o $@ -shared -lsodium $^
 
 liblogkeys.so: logkeys.o
-	gcc -shared -fPIC -o $@ $?
+	gcc -shared -fPIC -o $@ $^
 
 %.o: %.c
 	@echo wireshark sources in ${shark}
