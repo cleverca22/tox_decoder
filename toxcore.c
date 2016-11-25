@@ -56,8 +56,8 @@ static const value_string pingtype [] = { { 0, "Ping" }, { 1, "Pong" }, { 0, NUL
 static const value_string packettypenames [] = {
   { 0, "DHT Ping" },
   { 1, "DHT Pong" },
-  { 2, "Get Nodes" },
-  { 4, "Send Nodes" },
+  { 2, "Node Request" },
+  { 4, "Node Response" },
   { 16, "Alive" }, // friend_connection.h
   { 17, "Share Relays" }, // friend_connection.h
   { 18, "Friend Requests" }, // friend_connection.h
