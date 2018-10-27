@@ -432,6 +432,7 @@ void process_keys(FILE *input) {
 }
 
 void proto_register_tox(void) {
+  puts("defining protocol");
   if (sodium_init() == -1) {
     fprintf(stderr, "fatal error loading sodium\n");
     return;
@@ -473,6 +474,7 @@ void proto_register_tox(void) {
 
 void proto_reg_handoff_tox(void) {
   static dissector_handle_t tox_handle;
+  puts("linking port to protocol");
 
   tox_handle = create_dissector_handle(dissect_tox, proto_tox);
   dissector_add_uint("udp.port",TOX_PORT,tox_handle);
